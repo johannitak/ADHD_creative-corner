@@ -376,19 +376,31 @@ Always put JSON blocks before your chat message.`;
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true'
       },
-      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1200, system: systemPrompt, messages: conversationHistory })
+      body: JSON.stringify({ model: 'claude-sonnet-4-5', max_tokens: 1200, system: systemPrompt, messages: conversationHistory })
     });
 
-    if (res.status === 401) { typing.textContent = "Invalid API key. Tap 🔑 to update it."; typing.classList.remove('typing'); return; }
-
     const data = await res.json();
+
+    if (!res.ok) {
+      const errMsg = data?.error?.message || 'API error ' + res.status;
+      if (res.status === 401) {
+        typing.textContent = "Invalid API key — tap the key icon to update it.";
+      } else if (res.status === 429) {
+        typing.textContent = "Rate limit reached — wait a moment and try again.";
+      } else {
+        typing.textContent = "API error (" + res.status + "): " + errMsg;
+      }
+      typing.classList.remove('typing');
+      return;
+    }
+
     const inTok = data.usage?.input_tokens || 0;
     const outTok = data.usage?.output_tokens || 0;
 
     usage.totalIn += inTok;
     usage.totalOut += outTok;
     usage.sessions += 1;
-    usage.history.push({ ts: Date.now(), inTok, outTok, msg: text.slice(0, 40) + (text.length > 40 ? '…' : '') });
+    usage.history.push({ ts: Date.now(), inTok, outTok, msg: text.slice(0, 40) + (text.length > 40 ? '\u2026' : '') });
     if (usage.history.length > 100) usage.history = usage.history.slice(-100);
 
     let fullText = data.content?.[0]?.text || "Hmm, something went wrong. Try again!";
@@ -419,8 +431,9 @@ Always put JSON blocks before your chat message.`;
     conversationHistory.push({ role: 'assistant', content: fullText });
     saveData();
   } catch(e) {
-    typing.textContent = "Network error — check your connection and try again.";
+    typing.textContent = "Network error: " + (e.message || "check your connection and try again.");
     typing.classList.remove('typing');
+    console.error('Creative Corner error:', e);
   }
 }
 
