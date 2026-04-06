@@ -209,7 +209,17 @@ body::before{content:'';position:fixed;inset:0;z-index:0;
       <div class="inv-actions">
         <button class="inv-action-btn" onclick="exportInventory()">⬇ Export</button>
         <button class="inv-action-btn" onclick="document.getElementById('importFile').click()">⬆ Import</button>
+        <button class="inv-action-btn" onclick="toggleAddMaterialForm()">➕ Add</button>
         <input type="file" id="importFile" accept=".json" style="display:none" onchange="importInventory(event)">
+      </div>
+      <div id="addMaterialForm" style="display:none; padding:12px; background:#f5f5f5; border-radius:8px; margin-bottom:12px; gap:8px; flex-wrap:wrap;">
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <input type="text" id="matName" placeholder="Material name" style="flex:1; min-width:150px; padding:8px; border:1px solid #ddd; border-radius:4px;">
+          <input type="text" id="matCategory" placeholder="Category" style="flex:1; min-width:120px; padding:8px; border:1px solid #ddd; border-radius:4px;" value="supplies">
+          <input type="number" id="matQty" placeholder="Qty" min="1" value="1" style="width:60px; padding:8px; border:1px solid #ddd; border-radius:4px;">
+          <button onclick="addMaterialManually()" style="padding:8px 12px; background:#4CAF50; color:white; border:none; border-radius:4px; cursor:pointer;">✓ Add</button>
+          <button onclick="toggleAddMaterialForm()" style="padding:8px 12px; background:#999; color:white; border:none; border-radius:4px; cursor:pointer;">✕ Cancel</button>
+        </div>
       </div>
       <div class="inv-grid" id="invGrid"></div>
     </div>
@@ -519,6 +529,39 @@ function importInventory(evt) {
   };
   reader.readAsText(file);
   evt.target.value = ''; // reset so same file can be re-imported
+}
+
+function toggleAddMaterialForm() {
+  const form = document.getElementById('addMaterialForm');
+  form.style.display = form.style.display === 'none' ? 'flex' : 'none';
+  if (form.style.display === 'flex') {
+    document.getElementById('matName').focus();
+  }
+}
+
+function addMaterialManually() {
+  const name = document.getElementById('matName').value.trim();
+  const category = document.getElementById('matCategory').value.trim() || 'supplies';
+  const qty = parseInt(document.getElementById('matQty').value) || 1;
+
+  if (!name) {
+    alert('Please enter a material name');
+    return;
+  }
+
+  if (inventory[name]) {
+    inventory[name].qty += qty;
+  } else {
+    inventory[name] = { qty, category };
+  }
+
+  renderInventory();
+  saveData();
+
+  document.getElementById('matName').value = '';
+  document.getElementById('matCategory').value = 'supplies';
+  document.getElementById('matQty').value = '1';
+  toggleAddMaterialForm();
 }
 
 // ── Saved activities / library ─────────────────────────────────────────────
