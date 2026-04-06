@@ -62,13 +62,11 @@ body::before{content:'';position:fixed;inset:0;z-index:0;
   resize:none;outline:none;max-height:100px;line-height:1.4;}
 .chat-input::placeholder{color:var(--text3);}
 .chat-input:focus{border-color:var(--accent);}
-.mic-btn,.send-btn{width:42px;height:42px;border-radius:50%;border:none;cursor:pointer;
-  display:flex;align-items:center;justify-content:center;font-size:18px;
-  flex-shrink:0;transition:transform .15s,background .2s;}
-.mic-btn{background:var(--surface);color:var(--accent);}
-.mic-btn:active,.send-btn:active{transform:scale(.92);}
-.mic-btn.recording{background:rgba(255,80,80,.2);color:#ff5050;animation:recPulse 1s infinite;}
-@keyframes recPulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(255,80,80,.3)}50%{opacity:.8;box-shadow:0 0 0 8px rgba(255,80,80,0)}}
+.send-btn{width:42px;height:42px;border-radius:50%;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;transition:transform .15s,background .2s;}
+
+.send-btn:active{transform:scale(.92);}
+
+50%{opacity:.8;box-shadow:0 0 0 8px rgba(255,80,80,0)}}
 .send-btn{background:linear-gradient(135deg,#7c4de8,#9b5de5);color:#fff;}
 .section-title{font-family:var(--font-display);font-size:22px;color:var(--text);margin-bottom:16px;margin-top:8px;}
 .inv-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:80px;}
@@ -147,6 +145,7 @@ body::before{content:'';position:fixed;inset:0;z-index:0;
       <button class="key-btn" onclick="showKeyModal()" title="API key">🔑</button>
     </div>
   </div>
+  </div>
 
   <!-- API Key Modal -->
   <div id="keyModal" style="display:none;position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.7);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);align-items:center;justify-content:center;padding:24px;">
@@ -190,7 +189,6 @@ body::before{content:'';position:fixed;inset:0;z-index:0;
   </div>
 
   <div class="chat-input-area" id="chatInputArea">
-    <button class="mic-btn" id="micBtn" onclick="toggleVoice()">🎙</button>
     <textarea class="chat-input" id="chatInput" rows="1" placeholder="What materials do you have? How long today?" onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
     <button class="send-btn" onclick="sendMessage()">↑</button>
   </div>
@@ -219,7 +217,6 @@ let inventory = JSON.parse(localStorage.getItem('cc_inventory') || '{}');
 let conversationHistory = JSON.parse(localStorage.getItem('cc_history') || '[]');
 let usage = JSON.parse(localStorage.getItem('cc_usage') || '{"totalIn":0,"totalOut":0,"sessions":0,"history":[]}');
 let apiKey = localStorage.getItem('cc_apikey') || '';
-let isRecording = false, recognition = null;
 
 function calcCost(inTok, outTok) {
   return (inTok / 1e6 * PRICE_IN) + (outTok / 1e6 * PRICE_OUT);
@@ -459,122 +456,7 @@ function renderActivities(activities) {
 
 function newSession() { switchTab('chat'); addBotMsg("Ready for a new creative session! 🎨 How many minutes do you have today?"); }
 
-let mediaRecorder = null;
-let audioChunks = [];
 
-function toggleVoice() {
-  const btn = document.getElementById('micBtn');
-  const input = document.getElementById('chatInput');
-
-  if (isRecording) {
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
-    return;
-  }
-
-  if (!apiKey) { showKeyModal(); return; }
-
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    addBotMsg("Microphone access isn't available in this browser.");
-    return;
-  }
-
-  navigator.mediaDevices.getUserMedia({ audio: true })
-    .then(stream => {
-      audioChunks = [];
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm'
-                     : MediaRecorder.isTypeSupported('audio/ogg')  ? 'audio/ogg'
-                     : 'audio/mp4';
-      mediaRecorder = new MediaRecorder(stream, { mimeType });
-
-      mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
-
-      mediaRecorder.onstart = () => {
-        isRecording = true;
-        btn.classList.add('recording'); btn.textContent = '⏹';
-        input.placeholder = 'Recording... tap ⏹ to stop';
-      };
-
-      mediaRecorder.onstop = async () => {
-        isRecording = false;
-        btn.classList.remove('recording'); btn.textContent = '🎙';
-        input.placeholder = 'Transcribing...';
-        stream.getTracks().forEach(t => t.stop());
-
-        const blob = new Blob(audioChunks, { type: mimeType });
-        if (blob.size < 1000) {
-          input.placeholder = 'What materials do you have? How long today?';
-          addBotMsg("Recording was too short — try holding the mic button a bit longer!");
-          return;
-        }
-
-        try {
-          const base64 = await blobToBase64(blob);
-          const ext = mimeType.includes('webm') ? 'webm' : mimeType.includes('ogg') ? 'ogg' : 'mp4';
-
-          const res = await fetch('https://api.anthropic.com/v1/messages', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-api-key': apiKey,
-              'anthropic-version': '2023-06-01',
-              'anthropic-dangerous-direct-browser-access': 'true'
-            },
-            body: JSON.stringify({
-              model: 'claude-sonnet-4-5',
-              max_tokens: 256,
-              messages: [{
-                role: 'user',
-                content: [
-                  {
-                    type: 'document',
-                    source: { type: 'base64', media_type: mimeType, data: base64.split(',')[1] }
-                  },
-                  {
-                    type: 'text',
-                    text: 'Please transcribe exactly what is said in this audio recording. Return only the transcribed text, nothing else.'
-                  }
-                ]
-              }]
-            })
-          });
-
-          const data = await res.json();
-          const transcript = data.content?.[0]?.text?.trim();
-
-          if (transcript) {
-            input.value = transcript;
-            input.placeholder = 'What materials do you have? How long today?';
-            autoResize(input);
-            setTimeout(() => sendMessage(), 300);
-          } else {
-            input.placeholder = 'What materials do you have? How long today?';
-            addBotMsg("Couldn't transcribe audio — try speaking more clearly or type instead.");
-          }
-        } catch(e) {
-          input.placeholder = 'What materials do you have? How long today?';
-          addBotMsg("Transcription failed: " + (e.message || "unknown error"));
-        }
-      };
-
-      mediaRecorder.start();
-    })
-    .catch(err => {
-      if (err.name === 'NotAllowedError') {
-        addBotMsg("Mic permission denied — please allow microphone access in your browser settings.");
-      } else {
-        addBotMsg("Couldn't access mic: " + err.message);
-      }
-    });
-}
-
-function blobToBase64(blob) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-}
 
 function showKeyModal() {
   document.getElementById('keyModal').style.display = 'flex';
